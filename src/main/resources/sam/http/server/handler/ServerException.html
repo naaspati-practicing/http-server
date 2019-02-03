@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>ERROR</title>
+</head>
+
+<style>
+    body,
+    html {
+        font-family: monospace;
+    }
+    
+    #stacktrace {
+      position: absolute;
+      top: calc(40% + 30vh);
+      width: 100%;
+    }
+    
+    #box {
+        position: absolute;
+        left: 50%;
+        top: 40%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+    }
+    #box,
+    h1.error_code,
+    p.error_msg {
+        padding: 0;
+        margin: 0;
+    }
+
+    h1 {
+        font-size: 30vw;
+    }
+</style>
+
+<body>
+    <div id="box">
+        {{CONTENT}}
+    </div>
+</body>
+</html>

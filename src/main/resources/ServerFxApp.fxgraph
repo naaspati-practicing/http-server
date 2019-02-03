@@ -1,0 +1,39 @@
+package none
+
+import javafx.scene.Scene
+import javafx.stage.Stage
+import javafx.scene.layout.BorderPane
+import javafx.scene.control.Label
+import javafx.scene.control.TextArea
+import javafx.scene.layout.HBox
+import javafx.scene.control.Button
+import javafx.geometry.Insets
+import sam.fx.helpers.FxConstants
+import javafx.scene.control.Hyperlink
+import javafx.scene.layout.Pane
+import javafx.scene.layout.VBox
+import javafx.scene.text.Text
+dynamic component ServerFxApp {
+	Stage {
+		scene : Scene {
+			VBox id viewRoot {
+				VBox {
+					spacing : 5,
+					Hyperlink id top {onAction : controllermethod openRootPath, focusTraversable : false},
+					HBox { 
+						alignment : "CENTER_LEFT",
+						Text {text : "  Running At: ", style : "-fx-font-family:monospace"},
+						Hyperlink id uri_browse {onAction : controllermethod openBaseUri, focusTraversable : false}
+					}
+				},
+				TextArea id center {editable : false, focusTraversable : false, static margin : const FxConstants#INSETS_5},
+				HBox id bottom {
+					Button id clipboard {text:"clipboard", onAction : controllermethod openClipboard},
+					Pane {maxWidth : const Double#MAX_VALUE, static hgrow : "ALWAYS"},
+					Button {text : "Load .zip", onAction : controllermethod selectZip},
+					Button {text : "Load folder", onAction : controllermethod selectDir}
+				}
+			}
+		}
+	}
+}

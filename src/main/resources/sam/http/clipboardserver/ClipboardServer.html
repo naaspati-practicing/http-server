@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Clipboard</title>
+</head>
+
+<style>
+    body,
+    html {
+        font-family: monospace;
+    }
+
+    h1 {
+        text-align: center;
+    }
+
+    textarea {
+        width: 95vw;
+        height: 70vh;
+        border: 2px solid gray;
+    }
+</style>
+
+<body>
+    <h1>Clipboard</h1>
+    <textarea name="content" id="content" wrap="">{{CONTENT}}</textarea>
+    <button id="submit">Save</button>
+    <p style="color:red;" id="errors"></p>
+    <script>
+        const content = document.getElementById('content');
+        const submit = document.getElementById('submit');
+        const errors = document.getElementById('errors');
+
+        submit.onclick = () => {
+            fetch('/clipboard', {
+                method: 'PUT',
+                body: content.value
+            })
+                .then(r => {
+                    if (r.status != 204)
+                        throw new Error("expected status: 204, but found status: "+r.status);
+                    else 
+                      errors.innerText = '';
+                })
+                .catch(e => errors.innerText = e.toString());
+        }
+
+    </script>
+</body>
+
+</html>
