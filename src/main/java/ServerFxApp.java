@@ -29,8 +29,8 @@ import sam.http.server.Server;
 import sam.http.server.extra.ServerLogger;
 import sam.io.fileutils.FileOpenerNE;
 import sam.myutils.MyUtilsPath;
-import sam.nopkg.FileModResource;
 import sam.nopkg.ModResource;
+import sam.nopkg.ModResourceSavedAsString;
 import sam.reference.WeakAndLazy;
 
 public class ServerFxApp extends Application implements ServerLogger {
@@ -64,7 +64,7 @@ public class ServerFxApp extends Application implements ServerLogger {
 		Platform.runLater(() -> uri_browse.setText(server.getBaseUri()));
 	}
 
-	private final ModResource<File> previousVisit = new FileModResource(SELF_DIR.resolve("previousVisit"));
+	private final ModResource<File> previousVisit = new ModResourceSavedAsString<>(SELF_DIR.resolve("previousVisit"), File::new);
 	private final WeakAndLazy<DirectoryChooser> wdc = new WeakAndLazy<>(DirectoryChooser::new);
 	private final WeakAndLazy<FileChooser> wfc = new WeakAndLazy<>(() -> {
 		FileChooser fc = new FileChooser();

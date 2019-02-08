@@ -22,7 +22,6 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
-import java.lang.ref.WeakReference;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -32,111 +31,92 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
+
+import org.ini4j.Profile.Section;
+import org.ini4j.Wini;
 
 import fi.iki.elonen.NanoHTTPD.IHTTPSession;
 import fi.iki.elonen.NanoHTTPD.Response;
 import sam.http.server.extra.ServerLogger;
-import sam.reference.ReferenceUtils;
-import sam.reference.WeakQueue;
+import sam.reference.WeakPool;
 
 public abstract class BaseDocRoot implements DocRoot {
-	protected static final WeakQueue<byte[]> wbytes = new WeakQueue<>(true, () -> new byte[4*1024]);
+	protected static final WeakPool<byte[]> wbytes = new WeakPool<>(true, () -> new byte[4*1024]);
 
-	protected static final ArrayList<WeakReference<AutoCloseable>> RESOURECES = new ArrayList<>();
 	protected final Object LOCK = new Object();
-	protected volatile boolean closed;
+	private final AtomicBoolean closed = new AtomicBoolean(false);
 	protected static final String RESOURCE_URI = "/sam-resource";
 	protected static final String RESOURCE_URI_SLASHED = "/sam-resource/";
 	protected static final String downloaded_index_subpath = RESOURCE_URI_SLASHED.substring(1).concat("downloaded_index.ini");
 	protected final Path path; 
 	protected final ServerLogger logger;
-	protected List<Downloaded> new_downloaded;
-	protected final Map<Downloadable, Downloaded> old_downloaded;
-	protected HashMap<Integer, Downloadable> downloadables;
+	protected volatile List<Downloaded> new_downloaded;
+	protected Map<Downloadable, Downloaded> old_downloaded;
+	protected Wini old_downloaded_ini;
+	private boolean init = false;
+	protected volatile HashMap<Integer, Downloadable> downloadables;
 
 	public BaseDocRoot(ServerLogger logger, Path path) throws IOException {
 		this.logger = Objects.requireNonNull(logger);
 		this.path = Objects.requireNonNull(path);
-
+		
 		if(Files.notExists(path))
 			throw new FileNotFoundException(path.toString());
-
-		this.old_downloaded = readOldDownloaded();
+	}
+	protected void init() throws IOException {
+		if(init)
+			throw new IllegalStateException("already initialized");
+		
+		this.init = true;
+		
+		Src is = null;
+		try {
+			is = getFor0(downloaded_index_subpath);
+			
+			if(is == null || is.is == null) {
+				old_downloaded_ini = new Wini();
+				old_downloaded = Collections.emptyMap();
+			} else {
+				old_downloaded_ini = new Wini(is.is);
+				old_downloaded = new HashMap<>();
+				old_downloaded_ini.forEach((name, section) -> new Downloaded(name, section));
+			}
+		} finally {
+			if(is != null && is.is != null)
+				is.is.close();
+		}
 	}
 
-	protected abstract Map<Downloadable, Downloaded> readOldDownloaded() throws IOException;
-	protected abstract Src resource(Downloaded dld) throws IOException;
 	protected abstract Src getFor0(String subpath) throws IOException;
 
-	protected Map<Downloadable, Downloaded> readDownloaded(InputStream is) throws IOException{
-		InputStreamReader isr = new InputStreamReader(is, "utf-8");
-		BufferedReader reader = new BufferedReader(isr);
-
-		List<Downloaded> list = new ArrayList<>();
-		Map<String, String> map = new HashMap<>(); 
-		String line;
-		String name = null;
-
-		while((line = reader.readLine()) != null) {
-			String s = line.trim();
-			if(s.isEmpty())
-				continue;
-			if(s.charAt(0) == '[' && s.charAt(s.length() - 1) == ']') {
-				if(name != null) { 
-					map.put("name", name);
-					list.add(new Downloaded(map));
-					map.clear();
-				}
-				name = s.substring(1, s.length() - 1);
-			} else {
-				int n = line.indexOf('=');
-				if(n > 0) 
-					map.put(s.substring(0, n).trim(), s.substring(n+1));
-			}
-		}
-		return list.stream().collect(Collectors.collectingAndThen(Collectors.toMap(d -> d.downloadable, d -> d, (o, n) -> n), Collections::unmodifiableMap));
-	}
-
 	protected void writeDownloaded(OutputStream os) throws IOException {
-		OutputStreamWriter osr = new OutputStreamWriter(os, "utf-8");
+		if(old_downloaded_ini == null)
+			old_downloaded_ini = new Wini();
 		
-		if(!old_downloaded.isEmpty())
-			write(osr, old_downloaded.values());
-		
-		if(!new_downloaded.isEmpty())
-			write(osr, new_downloaded);
-
-		osr.flush();
-	}
-
-	private void write(OutputStreamWriter osr, Collection<Downloaded> values) throws IOException {
-		for (Downloaded d : values) {
-			osr.append('[').append(d.name).append(']').append('\n');
-			append(osr, PATH, d.path);
-			append(osr, IDENTIFIER, d.downloadable.identifier);
-			append(osr, ATTR, d.downloadable.attr);
-			append(osr, URL, d.downloadable.url);
-			osr.append('\n');
+		for (Downloaded d : new_downloaded) {
+			Section sec = old_downloaded_ini.add(d.name);
+			sec.add(PATH, d.path);
+			sec.add(IDENTIFIER, d.downloadable.identifier);
+			sec.add(ATTR, d.downloadable.attr);
+			sec.add(URL, d.downloadable.url);
 		}
+		
+		old_downloaded_ini.store(os);
 	}
-
-	private void append(OutputStreamWriter osr, String key, String value) throws IOException {
-		if(value != null)
-			osr.append(key).append('=').append(value).append('\n');
-	}
-
+	
 	@Override
 	public Path getPath() {
 		return path;
 	}
 
-	protected String bytesToString(long bytes) {
+	protected static String bytesToString(long bytes) {
 		return bytesToHumanReadableUnits(bytes, false);
 	}
 
 	protected void checkClosed() {
-		if(closed)
+		if(closed.get())
 			throw new IllegalStateException("closed");
 	}
 
@@ -164,6 +144,9 @@ public abstract class BaseDocRoot implements DocRoot {
 	@Override
 	public final Response getFor(IHTTPSession session) throws IOException {
 		checkClosed();
+		if(!init)
+			throw new IllegalStateException("not initialized");
+		
 		String subpath = session.getUri();
 
 		if(subpath.equals(RESOURCE_URI_SLASHED)) 
@@ -218,6 +201,8 @@ public abstract class BaseDocRoot implements DocRoot {
 				return null;
 
 			dld = old_downloaded.get(dnew);
+			//TODO find in old
+			// if found - getFor0(RESOURCE_URI+)...
 			Src src = dld == null ? null : resource(dld);
 			
 			if(src != null && src.is != null)
@@ -229,6 +214,24 @@ public abstract class BaseDocRoot implements DocRoot {
 		notYetImplemented(); 
 		return null;
 	}
+	
+	@Override
+	public final void close() throws Exception {
+		checkClosed();
+		if(!closed.compareAndSet(false, true))
+			throw new IllegalStateException("closed");
+		
+		try {
+			close0();	
+		} finally {
+			synchronized (LOCK) {
+				new_downloaded.clear();	
+			}
+		}
+		
+	}
+	
+	protected abstract void close0() throws IOException;
 
 	protected static class Src {
 		final long size;
@@ -247,26 +250,6 @@ public abstract class BaseDocRoot implements DocRoot {
 			if(this.downloadables == null)
 				downloadables = new HashMap<>();
 			downloadables.put(id, d);
-		}
-	}
-	
-	protected static void clearResources() {
-		if(RESOURECES.isEmpty()) 
-			return;
-
-		synchronized (RESOURECES) {
-			if(RESOURECES.isEmpty()) 
-				return;
-
-			RESOURECES.forEach(s -> {
-				AutoCloseable c = ReferenceUtils.get(s);
-				if(c != null) {
-					try {
-						c.close();
-					} catch (Exception e) { }
-				}
-			});
-			RESOURECES.clear();
 		}
 	}
 }

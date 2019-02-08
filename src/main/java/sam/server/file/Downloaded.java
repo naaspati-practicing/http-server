@@ -21,8 +21,8 @@ public class Downloaded implements Serializable {
 		this.path = path;
 		this.downloadable = downloadable;
 	}
-	public Downloaded(Map<String, String> map) {
-		this.name = map.get(NAME);
+	public Downloaded(String name,  Map<String, String> map) {
+		this.name = name;
 		this.path = map.get(PATH);
 		this.downloadable = new Downloadable(
 				map.get(IDENTIFIER), 

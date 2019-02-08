@@ -14,9 +14,9 @@ public interface ServerRootFactory {
 		if(Files.isDirectory(path))
 			return new DirDocRoot(logger, path);
 		else if(path.getFileName().toString().toLowerCase().endsWith(".zip")) 
-			return new ZipDocRoot(logger, path);
+			return ZipDocRootFactory.getInstance().create(logger, path);
 		
-		throw new IOException("roothandler not found for: "+path);
+		throw new IOException("DocRoot handler not found for: \""+path+"\"");
 	}
 	
 }

@@ -1,26 +1,16 @@
 package sam.server.file;
 
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
-import static java.nio.file.StandardOpenOption.READ;
 import static sam.http.server.extra.Utils.pipe;
 import static sam.myutils.Checker.isEmpty;
-import static sam.myutils.System2.lookup;
 
-import java.io.BufferedInputStream;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.lang.ref.WeakReference;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Collections;
 import java.util.HashSet;
-import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
@@ -29,87 +19,36 @@ import java.util.zip.ZipOutputStream;
 
 import sam.http.server.extra.ServerLogger;
 import sam.myutils.MyUtilsPath;
-import sam.reference.WeakQueue;
+import sam.nopkg.AutoCloseableWrapper;
 
-public class ZipDocRoot extends BaseDocRoot {
-	public static final int BUFFER_SIZE = Optional.ofNullable(lookup(ZipDocRoot.class.getName()+".buffer.size")).map(Integer::parseInt).orElse(2*1024*1024); // 2Mb
-	private static final WeakQueue<ByteBuffer> BUFFERS = new WeakQueue<>(true, () -> ByteBuffer.allocate(BUFFER_SIZE));
-
-	private final ByteBuffer buffer;
-	private final long size;
-	private final Set<String> entries = new HashSet<>();
+public abstract class ZipDocRoot extends BaseDocRoot {
+	private Set<String> entries;
 
 	public ZipDocRoot(ServerLogger logger, Path path) throws IOException {
 		super(logger, path);
-
-		if(!Files.isRegularFile(path) || !path.getFileName().toString().toLowerCase().endsWith(".zip"))
-			throw new IOException("not a zipfile");
-
-		clearResources();
-
-		synchronized (LOCK) {
-			long size = Files.size(path);
-
-			if(size >= BUFFER_SIZE) {
-				this.size = size;
-				logger.fine(() -> "zip file size("+bytesToString(size)+") found larger than buffer capacity("+bytesToString(BUFFER_SIZE)+"), delegating to DirRoot");
-				buffer = null;
-			} else {
-				boolean success = false;
-				buffer = BUFFERS.poll();
-				this.size = buffer.remaining();
-
-				try {
-					try(FileChannel c = FileChannel.open(path, READ)) {
-						buffer.clear();
-						while(c.read(buffer) != -1) {}
-						buffer.flip();
-					}
-					success = true;
-				} finally {
-					if(!success) {
-						BUFFERS.add(buffer);
-						closed = true;	
-					}
-				}
-			}
-			boolean success = false;
-			try {
-				entries.clear();
-				try(ZipInputStream zis = zis(true)) {
-					ZipEntry z;
-					while((z = zis.getNextEntry()) != null) {
-						entries.add(z.getName());
-						zis.closeEntry();
-					}
-				}
-				success = true;
-			} finally {
-				if(!success) {
-					BUFFERS.add(buffer);
-					closed = true;	
-				}
-			}
-		}
 	}
 
-	private ZipInputStream zis(boolean closed) throws IOException {
-		if(buffer != null)
-			return new ZipInputStream(new ByteArrayInputStream(buffer.array(), buffer.position(), buffer.limit()));
-		else {
-			ZipInputStream zis = new ZipInputStream(new BufferedInputStream(Files.newInputStream(getPath(), READ)));
-			if(!closed) {
-				synchronized (RESOURECES) {
-					RESOURECES.add(new WeakReference<AutoCloseable>(zis));
-				}	
+	protected void init() throws IOException {
+		entries = new HashSet<>();
+
+		try(ZipInputStream zis = zis()) {
+			ZipEntry z;
+			while((z = zis.getNextEntry()) != null) {
+				entries.add(z.getName());
+				zis.closeEntry();
 			}
-			return zis;
 		}
+		
+		super.init();
 	}
+
+	protected abstract ZipInputStream zis() throws IOException;
+	protected abstract long size();
+	public    abstract boolean isBuffered();
 
 	@Override
 	public String toString() {
-		return getClass().getSimpleName()+" [size="+bytesToString(size)+", buffered="+(buffer != null)+", path=\""+path+"\"]";
+		return getClass().getSimpleName()+" [size="+bytesToString(size())+", buffered="+isBuffered()+", path=\""+path+"\"]";
 	}
 
 	@Override
@@ -119,62 +58,49 @@ public class ZipDocRoot extends BaseDocRoot {
 	} 
 
 	@Override
-	public void close() throws IOException {
-		checkClosed();
-		closed = true;
-
-		clearResources();
-
+	protected void close0() throws IOException {
 		synchronized (LOCK) {
-			byte[] buffer = null;
+			if(isEmpty(new_downloaded))
+				return;
 
-			try {
-				if(isEmpty(new_downloaded))
-					return;
+			Path temp = MyUtilsPath.TEMP_DIR.resolve(path.getFileName()+".tmp");
 
-				Path temp = MyUtilsPath.TEMP_DIR.resolve(path.getFileName()+".tmp");
-				buffer = wbytes.poll();
+			try(InputStream is = zis();
+					ZipInputStream zis = new ZipInputStream(is);
+					OutputStream os = Files.newOutputStream(temp);
+					ZipOutputStream zos = new ZipOutputStream(os);
+					AutoCloseableWrapper<byte[]> wbuffer = new AutoCloseableWrapper<>(wbytes::poll, wbytes::add);
+					) {
 
-				try(InputStream is = zis(true);
-						ZipInputStream zis = new ZipInputStream(is);
-						OutputStream os = Files.newOutputStream(temp);
-						ZipOutputStream zos = new ZipOutputStream(os);) {
+				byte[] buffer = wbuffer.get();
 
-					ZipEntry z;
-					while((z = zis.getNextEntry()) != null) {
-						zos.putNextEntry(z);
-						if(!z.getName().equals(downloaded_index_subpath) && !z.isDirectory()) 
-							pipe(zis, zos, buffer);
-
-						zis.closeEntry();
-						zos.closeEntry();
-					}
-
-					for (Downloaded d : new_downloaded) {
-						String s = RESOURCE_URI_SLASHED.concat(d.getName());
-						d.setPath(s);
-						z = new ZipEntry(s);
-						zos.putNextEntry(z);
-						pipe(Paths.get(d.getPath()), zos, buffer);
-						zos.closeEntry();
-					}
-
-					z = new ZipEntry(downloaded_index_subpath);
+				ZipEntry z;
+				while((z = zis.getNextEntry()) != null) {
 					zos.putNextEntry(z);
-					writeDownloaded(zos);
+					if(!z.getName().equals(downloaded_index_subpath) && !z.isDirectory()) 
+						pipe(zis, zos, buffer);
+
+					zis.closeEntry();
 					zos.closeEntry();
 				}
 
-				logger.fine(() -> new_downloaded.stream().map(d -> d.name).collect(Collectors.joining("\n  ", "rezipped: \""+path+"\"\nadded:\n  ", "\n")));
-				Files.move(temp, path, REPLACE_EXISTING);
+				for (Downloaded d : new_downloaded) {
+					String s = RESOURCE_URI_SLASHED.concat(d.getName());
+					d.setPath(s);
+					z = new ZipEntry(s);
+					zos.putNextEntry(z);
+					pipe(Paths.get(d.getPath()), zos, buffer);
+					zos.closeEntry();
+				}
 
-			} finally {
-				BUFFERS.offer(this.buffer);
-				wbytes.add(buffer);
-				new_downloaded.clear();
-
-				clearResources();
+				z = new ZipEntry(downloaded_index_subpath);
+				zos.putNextEntry(z);
+				writeDownloaded(zos);
+				zos.closeEntry();
 			}
+
+			logger.fine(() -> new_downloaded.stream().map(d -> d.name).collect(Collectors.joining("\n  ", "rezipped: \""+path+"\"\nadded:\n  ", "\n")));
+			Files.move(temp, path, REPLACE_EXISTING);
 		}
 	}
 
@@ -186,7 +112,7 @@ public class ZipDocRoot extends BaseDocRoot {
 			ZipInputStream zis = null;
 			boolean found = false;
 			try {
-				zis = zis(false);
+				zis = zis();
 				ZipEntry z;
 
 				while((z = zis.getNextEntry()) != null) {
@@ -206,19 +132,5 @@ public class ZipDocRoot extends BaseDocRoot {
 				}
 			}
 		}
-	}
-
-	@Override
-	protected Map<Downloadable, Downloaded> readOldDownloaded() throws IOException {
-		ZipInputStream zis = find(downloaded_index_subpath);
-		if(zis == null)
-			return Collections.emptyMap();
-
-		return readDownloaded(zis);
-	}
-
-	@Override
-	protected Src resource(Downloaded dld) throws IOException {
-		return  getFor0(dld.name);
 	}
 }

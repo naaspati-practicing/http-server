@@ -5,16 +5,12 @@ import static java.nio.file.StandardOpenOption.WRITE;
 
 import java.io.BufferedOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
-import java.lang.ref.WeakReference;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
-import java.util.Collections;
 import java.util.Iterator;
-import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -24,22 +20,8 @@ import sam.myutils.Checker;
 
 public class DirDocRoot extends BaseDocRoot {
 
-	boolean modified;
-
 	public DirDocRoot(ServerLogger logger, Path path) throws IOException {
 		super(logger, path);
-	}
-	
-	@Override
-	protected Map<Downloadable, Downloaded> readOldDownloaded() throws IOException {
-		Path p = getPath().resolve(downloaded_index_subpath);
-		if(Files.notExists(p))
-			return Collections.emptyMap();
-		else {
-			try(InputStream is = Files.newInputStream(getPath().resolve(downloaded_index_subpath));) {
-				return readDownloaded(is);
-			} 
-		}
 	}
 
 	@Override
@@ -48,28 +30,17 @@ public class DirDocRoot extends BaseDocRoot {
 
 		if(Files.notExists(file))
 			return null;
-
-		long size = Files.size(file);
-		InputStream is = Files.newInputStream(file, StandardOpenOption.READ);
-		RESOURECES.add(new WeakReference<AutoCloseable>(is));
-		return new Src(size, is);
+		return new Src(Files.size(file), Files.newInputStream(file, StandardOpenOption.READ));
 	}
 
 	@Override
-	public void close() throws IOException {
-		checkClosed();
-		closed = true;
-		
-		clearResources();
-		
+	public void close0() throws IOException {
 		synchronized (LOCK) {
 			if(Checker.isEmpty(new_downloaded))
 				return;
+			
 			try(OutputStream os = Files.newOutputStream(getPath().resolve(downloaded_index_subpath))) {
 				writeDownloaded(os);
-				os.flush();
-			} finally {
-				new_downloaded.clear();
 			}
 			
 		}
@@ -104,10 +75,4 @@ public class DirDocRoot extends BaseDocRoot {
 		}
 		Files.move(tempzip, target, StandardCopyOption.REPLACE_EXISTING);
 	}
-
-	@Override
-	protected Src resource(Downloaded dld) throws IOException {
-		return getFor0(dld.name);
-	}
-
 }
