@@ -15,24 +15,18 @@ import static sam.server.file.Downloaded.IDENTIFIER;
 import static sam.server.file.Downloaded.PATH;
 import static sam.server.file.Downloaded.URL;
 
-import java.io.BufferedReader;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.io.OutputStreamWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
 
 import org.ini4j.Profile.Section;
 import org.ini4j.Wini;
@@ -42,7 +36,7 @@ import fi.iki.elonen.NanoHTTPD.Response;
 import sam.http.server.extra.ServerLogger;
 import sam.reference.WeakPool;
 
-public abstract class BaseDocRoot implements DocRoot {
+abstract class BaseDocRoot implements DocRoot {
 	protected static final WeakPool<byte[]> wbytes = new WeakPool<>(true, () -> new byte[4*1024]);
 
 	protected final Object LOCK = new Object();
@@ -149,9 +143,12 @@ public abstract class BaseDocRoot implements DocRoot {
 		
 		String subpath = session.getUri();
 
-		if(subpath.equals(RESOURCE_URI_SLASHED)) 
+		/* TODO
+		 * if(subpath.equals(RESOURCE_URI_SLASHED)) 
 			return resource(Integer.parseInt(subpath.substring(RESOURCE_URI_SLASHED.length())));
 
+		 */
+		
 		if(subpath.equals("/"))
 			subpath = "index.html";
 		else
@@ -164,7 +161,8 @@ public abstract class BaseDocRoot implements DocRoot {
 			return null;
 
 		String mime = getMimeTypeForFile(subpath);
-		switch (mime) {
+		/* TODO
+		 * switch (mime) {
 			case TEXT_HTML:
 				return processHtml(src, mime);
 			case TEXT_CSS:
@@ -172,6 +170,9 @@ public abstract class BaseDocRoot implements DocRoot {
 			default:
 				return rawResponse(src, mime);
 		}
+		 */
+		
+		return rawResponse(src, mime);
 	}
 
 	private Response rawResponse(Src src, String mime) {
@@ -183,12 +184,12 @@ public abstract class BaseDocRoot implements DocRoot {
 	}
 
 	private Response processCss(Src src, String mime) {
-		// FIXME Auto-generated method stub
+		// TODO Auto-generated method stub
 		return rawResponse(src, TEXT_CSS);
 	}
 
 	private Response processHtml(Src src, String mime) {
-		// FIXME Auto-generated method stub
+		// TODO Auto-generated method stub
 		return rawResponse(src, TEXT_HTML);
 	}
 
@@ -203,7 +204,7 @@ public abstract class BaseDocRoot implements DocRoot {
 			dld = old_downloaded.get(dnew);
 			//TODO find in old
 			// if found - getFor0(RESOURCE_URI+)...
-			Src src = dld == null ? null : resource(dld);
+			Src src =  null; //TODO dld == null ? null : resource(dld);
 			
 			if(src != null && src.is != null)
 				return rawResponse(src, getMimeTypeForFile(dld.name));

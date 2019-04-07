@@ -14,7 +14,7 @@ import sam.http.server.handler.IHttpHandler;
 import sam.http.server.handler.NotFound;
 import sam.http.server.handler.ServerException;
 import sam.server.file.DocRoot;
-import sam.server.file.ServerRootFactory;
+import sam.server.file.DocRootFactory;
 
 class RootHandler implements IHttpHandler {
 	private static final AtomicBoolean IS_INITIATED = new AtomicBoolean(false);
@@ -38,7 +38,7 @@ class RootHandler implements IHttpHandler {
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
-		this.docRoot = root == null ? null : ServerRootFactory.of(root, logger);
+		this.docRoot = root == null ? null : DocRootFactory.of(root, logger);
 		logger.info(() -> "root change: "+this.docRoot);
 	}
 

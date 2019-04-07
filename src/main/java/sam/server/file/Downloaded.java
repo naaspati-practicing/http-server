@@ -3,7 +3,7 @@ package sam.server.file;
 import java.io.Serializable;
 import java.util.Map;
 
-public class Downloaded implements Serializable {
+class Downloaded implements Serializable {
 	private static final long serialVersionUID = 4909460094639292997L;
 	
 	public static final String NAME = "name";

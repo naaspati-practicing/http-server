@@ -16,8 +16,8 @@ ext.appdir = file(System.env.SAM_PROGRAMS+'\\http-server\\bin')
 dependencies {
    implementation 'org.nanohttpd:nanohttpd:+'
    implementation files('myutils.jar')
-   compile 'org.jsoup:jsoup:+'
-   compile 'org.ini4j:ini4j:0.5.4'
+   implementation 'org.jsoup:jsoup:+'
+   implementation 'org.ini4j:ini4j:0.5.4'
 }
 
 task deleteJars {

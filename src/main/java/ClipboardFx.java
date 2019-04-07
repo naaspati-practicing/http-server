@@ -2,13 +2,9 @@ import static javafx.application.Platform.runLater;
 import static javafx.scene.text.TextAlignment.CENTER;
 import static sam.fx.alert.FxAlert.showConfirmDialog;
 import static sam.fx.helpers.FxConstants.INSETS_5;
-import static sam.io.serilizers.StringReader2.getText;
 import static sam.myutils.MyUtilsException.hideError;
-import static sam.myutils.MyUtilsException.noError;
 import static sam.myutils.MyUtilsPath.selfDir;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -24,31 +20,17 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Text;
 import javafx.stage.Stage;
 import sam.fx.helpers.FxHBox;
-import sam.io.serilizers.StringWriter2;
-import sam.nopkg.ModResource;
-import sam.nopkg.SimpleModResource;
+import sam.nopkg.SavedAsStringResource;
+import sam.nopkg.SavedResource;
 
 public class ClipboardFx extends VBox  {
 	private final TextArea ta = new TextArea();
-	private final ModResource<String> text = new SimpleModResource<String>(this::read, this::write);
+	private final SavedResource<String> text = new SavedAsStringResource<>(selfDir().resolve(getClass().getName()), s -> s);
 	private final Runnable onClose;
 	private String not_update;
-	private final Path savePath;
-
-	private void write(String s) {
-		hideError(() -> StringWriter2.setText(savePath, s), Throwable::printStackTrace);
-		System.out.println("write: "+savePath);
-	}
-	private String read() {
-		if(Files.exists(savePath))
-			return noError(() -> getText(savePath), Throwable::printStackTrace);
-		return null;
-	}
 
 	public ClipboardFx(Supplier<HostServices> hostServicesProvider, String uri, Stage parent, Consumer<String> onChange, Runnable onClose) {
 		setId("clipboard-fx");
-		
-		this.savePath = selfDir().resolve(getClass().getName());
 		
 		Text text = new Text("CLIPBOARD");
 		text.setFill(Color.DARKGREEN);

@@ -18,7 +18,7 @@ import sam.http.server.extra.ServerLogger;
 import sam.http.server.extra.Utils;
 import sam.myutils.Checker;
 
-public class DirDocRoot extends BaseDocRoot {
+class DirDocRoot extends BaseDocRoot {
 
 	public DirDocRoot(ServerLogger logger, Path path) throws IOException {
 		super(logger, path);

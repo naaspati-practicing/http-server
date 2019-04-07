@@ -8,7 +8,7 @@ import java.util.function.BiConsumer;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 
-public final class ReplaceUrls {
+final class ReplaceUrls {
 	
 	private ReplaceUrls() { }
 
