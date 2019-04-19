@@ -28,7 +28,7 @@ dynamic component ServerFxApp {
 				},
 				TextArea id center {editable : false, focusTraversable : false, static margin : const FxConstants#INSETS_5},
 				HBox id bottom {
-					Button id clipboard {text:"clipboard", onAction : controllermethod openClipboard},
+					Button id clipboardBtn {text:"clipboard", onAction : controllermethod openClipboard},
 					Pane {maxWidth : const Double#MAX_VALUE, static hgrow : "ALWAYS"},
 					Button {text : "Load .zip", onAction : controllermethod selectZip},
 					Button {text : "Load folder", onAction : controllermethod selectDir}

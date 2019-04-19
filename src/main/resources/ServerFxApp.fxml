@@ -31,7 +31,7 @@
 					<VBox.margin><FxConstants fx:constant="INSETS_5" /></VBox.margin>
 				</TextArea>
 				<HBox fx:id="bottom"> 
-					<Button fx:id="clipboard" text="clipboard" onAction="#openClipboard"/> 
+					<Button fx:id="clipboardBtn" text="clipboard" onAction="#openClipboard"/> 
 					<Pane HBox.hgrow="ALWAYS"> 
 						<maxWidth><Double fx:constant="MAX_VALUE" /></maxWidth>
 					</Pane>

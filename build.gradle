@@ -18,6 +18,7 @@ dependencies {
    implementation files('myutils.jar')
    implementation 'org.jsoup:jsoup:+'
    implementation 'org.ini4j:ini4j:0.5.4'
+   implementation 'org.codejargon.feather:feather:+'
 }
 
 task deleteJars {
@@ -28,7 +29,6 @@ task deleteJars {
      });
   }
 }
-
 
 task install(type: Copy, dependsOn:[installDist, deleteJars]) {
   def libdir = file(new File(installDist.destinationDir, 'lib')) 

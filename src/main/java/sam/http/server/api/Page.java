@@ -1,4 +1,4 @@
-package sam.http.server.extra;
+package sam.http.server.api;
 
 import java.io.BufferedReader;
 import java.io.IOException;

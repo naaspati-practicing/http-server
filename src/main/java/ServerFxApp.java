@@ -3,9 +3,11 @@
 import static javafx.application.Platform.runLater;
 
 import java.io.File;
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import javafx.application.Application;
@@ -21,47 +23,103 @@ import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.FileChooser.ExtensionFilter;
 import javafx.stage.Stage;
+import sam.collection.ArraysUtils;
+import sam.di.FeatherInjector;
+import sam.di.Injector;
 import sam.fx.alert.FxAlert;
 import sam.fx.helpers.FxFxml;
+import sam.fx.helpers.FxUtils;
 import sam.fx.popup.FxPopupShop;
-import sam.http.clipboardserver.ClipboardServer;
+import sam.http.clipboard.ClipboardFx;
 import sam.http.server.Server;
-import sam.http.server.extra.ServerLogger;
+import sam.http.server.api.DocRootHandler;
+import sam.http.server.api.IHandler;
+import sam.http.server.api.IHandlerFactory;
+import sam.http.server.api.ServerLogger;
+import sam.http.server.api.Utils;
 import sam.io.fileutils.FileOpenerNE;
+import sam.myutils.Checker;
 import sam.myutils.MyUtilsPath;
 import sam.nopkg.SavedAsStringResource;
 import sam.nopkg.SavedResource;
 import sam.reference.WeakAndLazy;
 
-public class ServerFxApp extends Application implements ServerLogger {
-	
+public class ServerFxApp extends Application {
+
 	private static final Path SELF_DIR = MyUtilsPath.selfDir();
-	
+
 	private Server server;
 	private Stage stage;
 	@FXML private TextArea center;
 	@FXML private Hyperlink top;
 	@FXML private Hyperlink uri_browse;
-	@FXML private Button clipboard;
+	@FXML private Button clipboardBtn;
 	@FXML private VBox viewRoot;
+	private final DocRootHandler handler = Injector.getInstance().instance(DocRootHandler.class, "default-handler");
 
 	@Override
 	public void start(Stage stage) throws Exception {
-		server = new Server(8080, this);
-		server.start();
+		try {
+			IHandlerFactory[] handler = Utils.serviceLoaded(IHandlerFactory.class);
+			
+			if(Checker.isEmpty(handler)) {
+				error("no handlers specified", null);
+				return;
+			}
+			
+			ServerLogger logger = logger();
 
-		stage.setTitle("Http-Server");
-		FxFxml.load(this, stage, this);
-		stage.getScene().getStylesheets().add("styles.css");
-		top.setVisible(false);
+			for (IHandlerFactory h : handler) 
+				h.create(logger);
 
-		FileOpenerNE.setErrorHandler((file, e) -> e.printStackTrace());
-		this.stage = stage;
-		FxPopupShop.setParent(stage);
-		FxAlert.setParent(stage);
+			List<Object> modules = FeatherInjector.prepare_modules((Object[])handler);
+			if(modules.getClass() != ArrayList.class)
+				modules = new ArrayList<>(modules);
+			
+			modules.add(this);
+			FeatherInjector injector = new FeatherInjector(FeatherInjector.default_mappings(), modules);
+			Injector.init(injector);
+
+			server = new Server(8080, logger, ArraysUtils.map(handler, new IHandler[handler.length], h -> Objects.requireNonNull(h.get())));
+			server.start();
+
+			stage.setTitle("Http-Server");
+			FxFxml.load(this, stage, this);
+			stage.getScene().getStylesheets().add("styles.css");
+			top.setVisible(false);
+
+			FileOpenerNE.setErrorHandler((file, e) -> e.printStackTrace());
+			this.stage = stage;
+			FxPopupShop.setParent(stage);
+			FxAlert.setParent(stage);
+			stage.show();
+
+			Platform.runLater(() -> uri_browse.setText(server.getBaseUri()));
+		} catch (Throwable e) {
+			error(null, e);
+		}
+	}
+
+	private void error(String s, Throwable e) {
+		FxUtils.setErrorTa(stage, "failed to open app", s, e);
+		stage.sizeToScene();
 		stage.show();
-		
-		Platform.runLater(() -> uri_browse.setText(server.getBaseUri()));
+	}
+
+	private ServerLogger logger() {
+		return new ServerLogger() {
+			@Override
+			public void fine(Supplier<String> msg) {
+				runLater(() -> center.appendText(msg.get()+"\n"));
+			}
+
+			@Override public void finer(Supplier<String> msg) { }
+
+			@Override
+			public void info(Supplier<String> msg) {
+				runLater(() -> center.appendText(msg.get()+"\n"));
+			}
+		};
 	}
 
 	private final SavedResource<File> previousVisit = new SavedAsStringResource<>(SELF_DIR.resolve("previousVisit"), File::new);
@@ -71,50 +129,51 @@ public class ServerFxApp extends Application implements ServerLogger {
 		fc.getExtensionFilters().add(new ExtensionFilter("zip file", "*.zip"));
 		return fc;
 	});
-	
-	private class ClipboardWrap {
-		final ClipboardFx fx;
-		final ClipboardServer cerver;	
-		
-		public ClipboardWrap() throws UnsupportedEncodingException, IOException {
-			cerver = new ClipboardServer(this::setFxText);
-			fx = new ClipboardFx(() -> getHostServices(), server.getBaseUri().concat(cerver.getPath()), stage, cerver::setText, this::onClose);
-		}
-		private void onClose() {
-			clipboard.setDisable(false);
-			viewRoot.getChildren().remove(fx);
+
+	private class ClipboardWrap extends ClipboardFx implements Consumer<String> {
+		@Override
+		public void close() {
+			super.close();
+
+			clipboardBtn.setDisable(false);
+			viewRoot.getChildren().remove(this);
 			stage.sizeToScene();
-			server.remove(cerver);
 		}
-		private void setFxText(String s) {
-			fx.setText(s);
+
+		@Override
+		public void accept(String s) {
+			setText(s);
 		}
 		public void open() {
-			clipboard.setDisable(true);
-			viewRoot.getChildren().add(fx);
+			clipboardBtn.setDisable(true);
+			viewRoot.getChildren().add(this);
 			stage.sizeToScene();
-			server.add(cerver);
+			setOnChange(this);
+			this.start();
+		}
+		@Override
+		protected void showDocument(String uri) {
+			getHostServices().showDocument(uri);
+		}
+		@Override
+		protected String uri(String path) {
+			return server.getBaseUri().concat(path);
 		}
 	}
-	
+
 	@FXML
 	private void openBaseUri(Event e) {
 		getHostServices().showDocument(server.getBaseUri());
 		uri_browse.setVisited(false);
 	}
-	private ClipboardWrap clipboardWrap;
-	
+
+	private ClipboardWrap clipboard;
+
 	@FXML
 	private void openClipboard(Event e) {
-		if(clipboardWrap == null) {
-			try {
-				clipboardWrap = new ClipboardWrap();
-			} catch (IOException e1) {
-				FxAlert.showErrorDialog(null, "error", e1);
-				return;
-			}
-		} 
-		clipboardWrap.open();
+		if(clipboard == null) 
+			clipboard = new ClipboardWrap();
+		clipboard.open();
 	}
 
 	@FXML
@@ -141,7 +200,7 @@ public class ServerFxApp extends Application implements ServerLogger {
 			FxPopupShop.showHidePopup("cancelled", 1500);
 		else {
 			try {
-				server.setRoot(file);
+				handler.setDocRoot(file.toPath());
 				previousVisit.set(file.getParentFile());
 				top.setTooltip(new Tooltip(file.toString()));
 				top.setText(file.getName());
@@ -173,22 +232,10 @@ public class ServerFxApp extends Application implements ServerLogger {
 	public void stop() throws Exception {
 		if(server != null)
 			server.stop();
-		if(clipboardWrap != null)
-			clipboardWrap.fx.close();
+		if(clipboard != null)
+			clipboard.close();
 		previousVisit.close();
 		System.out.println("server shutdown");
 		super.stop();
-	}
-
-	@Override
-	public void fine(Supplier<String> msg) {
-		runLater(() -> center.appendText(msg.get()+"\n"));
-	}
-
-	@Override public void finer(Supplier<String> msg) { }
-
-	@Override
-	public void info(Supplier<String> msg) {
-		runLater(() -> center.appendText(msg.get()+"\n"));
 	}
 }

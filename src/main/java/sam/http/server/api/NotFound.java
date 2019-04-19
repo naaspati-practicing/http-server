@@ -1,4 +1,4 @@
-package sam.http.server.handler;
+package sam.http.server.api;
 
 import fi.iki.elonen.NanoHTTPD.Response;
 import fi.iki.elonen.NanoHTTPD.Response.Status;
